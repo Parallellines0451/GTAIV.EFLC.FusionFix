@@ -153,8 +153,6 @@ public:
 
         static float fCascadeBlendSize = 0.1f;
 
-        static float fMaxPQValue = 100.0f;
-
         static int nForceShadowFilter = 0;
 
         static bool bSmoothShorelines = true;
@@ -162,6 +160,8 @@ public:
         static bool bSmoothLightVolumes = true;
 
         static bool bNoBloomColorShift = true;
+
+        static bool bAllowHDR = false;
 
         static auto bNoWindSway = false;
 
@@ -188,7 +188,7 @@ public:
             bSmoothLightVolumes = iniReader.ReadInteger("MISC", "SmoothLightVolumes", 1) != 0;
 
             bNoBloomColorShift = iniReader.ReadInteger("MISC", "NoBloomColorShift", 1) != 0;
-            fMaxPQValue = max(iniReader.ReadFloat("MISC", "MaxPQValue", 100.0f), 0.0000001f);
+            bAllowHDR = iniReader.ReadInteger("HDR", "AllowHDR", 0) != 0;
 
             // Redirect path to one unified folder
             auto pattern = hook::pattern("8B 04 8D ? ? ? ? A3 ? ? ? ? 8B 44 24 04");
@@ -579,7 +579,7 @@ public:
                         pDevice->SetVertexShaderConstantF(235, &arr10[0], 1);
 
                         static float arr11[4];
-                        arr11[0] = 1.0f / fMaxPQValue;
+                        arr11[0] = bAllowHDR;
                         arr11[1] = static_cast<float>(fog->get());
                         arr11[2] = bSmoothLightVolumes ? 1.0f : 0.0f;
                         arr11[3] = 0.0f;

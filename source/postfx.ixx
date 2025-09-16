@@ -29,6 +29,8 @@ import d3dx9_43;
 #define IDR_SSAO_gen_ps                          120
 #define IDR_SSAO_blend_ps                        121
 
+#define IDR_HDRPass_PS                           122
+
 #define IDR_DeferredShadowBlur                   126
 #define IDR_SunShafts_PS                         127
 #define IDR_CascadeAtlasGen                      128
@@ -117,6 +119,7 @@ public:
 
     // shaders
     IDirect3DPixelShader9* FxaaPS = nullptr;
+    IDirect3DPixelShader9* HDRPass_PS = nullptr;
 
     IDirect3DPixelShader9* SSDraw_PS = nullptr;
     IDirect3DPixelShader9* SSAdd_PS = nullptr;
@@ -157,6 +160,8 @@ public:
     //int useScreenSpaceShadowsBlur = 3;
     bool useStippleFilter = true;
 
+    bool bAllowHDR = false;
+
     bool shadersLoaded = false;
 
     bool loadShaders(LPDIRECT3DDEVICE9 pDevice, HMODULE hm) {
@@ -186,6 +191,7 @@ public:
         //if(!DeferredShadowBlurCircle_ps && D3DXCompileShaderFromResourceW(hm, MAKEINTRESOURCEW(IDR_DeferredShadowBlur), NULL, NULL, "BlurCircular", "ps_3_0", 0, &bf1, &bf2, &ppConstantTable) == S_OK) {               if(pDevice->CreatePixelShader( (DWORD*) bf1->GetBufferPointer(), &DeferredShadowBlurCircle_ps) != S_OK || !DeferredShadowBlurCircle_ps) SAFE_RELEASE(DeferredShadowBlurCircle_ps); SAFE_RELEASE(bf1); SAFE_RELEASE(bf2); SAFE_RELEASE(ppConstantTable); }
 
         if(!FxaaPS && D3DXCompileShaderFromResourceW(hm, MAKEINTRESOURCEW(IDR_FXAA), NULL, NULL, "ApplyFXAA", "ps_3_0", 0, &bf1, &bf2, &ppConstantTable) == S_OK) {                                                     if(pDevice->CreatePixelShader( (DWORD*) bf1->GetBufferPointer(), &FxaaPS) != S_OK || !FxaaPS) SAFE_RELEASE(FxaaPS); SAFE_RELEASE(bf1); SAFE_RELEASE(bf2); SAFE_RELEASE(ppConstantTable); }
+        if(!HDRPass_PS && D3DXCompileShaderFromResourceW(hm, MAKEINTRESOURCEW(IDR_HDRPass_PS), NULL, NULL, "HDRPass", "ps_3_0", 0, &bf1, &bf2, &ppConstantTable) == S_OK) {                                                     if(pDevice->CreatePixelShader( (DWORD*) bf1->GetBufferPointer(), &HDRPass_PS) != S_OK || !HDRPass_PS) SAFE_RELEASE(HDRPass_PS); SAFE_RELEASE(bf1); SAFE_RELEASE(bf2); SAFE_RELEASE(ppConstantTable); }
 
         if(!SMAA_EdgeDetection && D3DXCompileShaderFromResourceW(hm, MAKEINTRESOURCEW(IDR_SMAA), NULL, NULL, "DX9_SMAALumaEdgeDetectionPS", "ps_3_0", 0, &bf1, &bf2, &ppConstantTable) == S_OK) {                          if(pDevice->CreatePixelShader( (DWORD*) bf1->GetBufferPointer(), &SMAA_EdgeDetection) != S_OK || !SMAA_EdgeDetection) SAFE_RELEASE(SMAA_EdgeDetection); SAFE_RELEASE(bf1); SAFE_RELEASE(bf2); SAFE_RELEASE(ppConstantTable); }
         if(!SMAA_BlendingWeightsCalculation && D3DXCompileShaderFromResourceW(hm, MAKEINTRESOURCEW(IDR_SMAA), NULL, NULL, "DX9_SMAABlendingWeightCalculationPS", "ps_3_0", 0, &bf1, &bf2, &ppConstantTable) == S_OK) {      if(pDevice->CreatePixelShader( (DWORD*) bf1->GetBufferPointer(), &SMAA_BlendingWeightsCalculation) != S_OK || !SMAA_BlendingWeightsCalculation) SAFE_RELEASE(SMAA_BlendingWeightsCalculation); SAFE_RELEASE(bf1); SAFE_RELEASE(bf2); SAFE_RELEASE(ppConstantTable); }
@@ -280,7 +286,7 @@ public:
     }
 
     bool ShadersFinishedLoading() {
-        if(FxaaPS && dof_blur_ps && dof_coc_ps && depth_of_field_tent_ps && stipple_filter_ps
+        if(HDRPass_PS && FxaaPS && dof_blur_ps && dof_coc_ps && depth_of_field_tent_ps && stipple_filter_ps
            && SSDraw_PS && SSPrepass_PS && SSAdd_PS
            && SMAA_EdgeDetection && SMAA_BlendingWeightsCalculation && SMAA_NeighborhoodBlending
            && SMAA_EdgeDetectionVS && SMAA_BlendingWeightsCalculationVS && SMAA_NeighborhoodBlendingVS)
@@ -295,6 +301,8 @@ public:
         EnablePostfx = iniReader.ReadInteger("SRF", "EnablePostfx", 1);
 
         useStippleFilter = iniReader.ReadInteger("SRF", "StippleFilter", 1) != 0;
+
+        bAllowHDR = iniReader.ReadInteger("HDR", "AllowHDR", 0) != 0;
 
         // 0 off, 1 horizontal, 2 vertical, 3 horizontal e vertical.
         //useScreenSpaceShadowsBlur = iniReader.ReadInteger("SRF", "ScreenSpaceShadowsBlur", 0);
@@ -327,8 +335,15 @@ public:
 
         FullScreenTex_temp1 = CreateEmptyRT("FullScreenTex_temp1", 3, Width, Height, 64, &desc);
         
-        desc.mFormat = rage::GRCFMT_A8R8G8B8;
-        FullScreenTex_temp2 = CreateEmptyRT("FullScreenTex_temp2", 3, Width, Height, 32, &desc);
+        if (!bAllowHDR)
+        {
+            desc.mFormat = rage::GRCFMT_A8R8G8B8;
+            FullScreenTex_temp2 = CreateEmptyRT("FullScreenTex_temp2", 3, Width, Height, 32, &desc);
+        }
+        else
+        {
+            FullScreenTex_temp2 = CreateEmptyRT("FullScreenTex_temp2", 3, Width, Height, 64, &desc);
+        }
 
         //desc.mFormat = rage::GRCFMT_G16R16F;
         // 
@@ -733,7 +748,7 @@ private:
                             pDevice->SetSamplerState(i, D3DSAMP_MAGFILTER, PostFxResources.Samplers[i]);
                         }
 
-                        if(UsePostFxAA->get() > FusionFixSettings.AntialiasingText.eMO_OFF)
+                        if(UsePostFxAA->get() > FusionFixSettings.AntialiasingText.eMO_OFF || PostFxResources.bAllowHDR)
                             pDevice->SetRenderTarget(0, PostFxResources.FullScreenSurface_temp2);
                         else
                             pDevice->SetRenderTarget(0, PostFxResources.backBuffer);
@@ -747,6 +762,26 @@ private:
                         hbDrawPrimitivePostFX.fun();
                             // if(UsePostFxAA->get() > FusionFixSettings.AntialiasingText.eMO_OFF)
                             //     PostFxResources.swapbuffers();
+                    }
+
+                    // HDR pass
+                    if (PostFxResources.HDRPass_PS && PostFxResources.bAllowHDR)
+                    {
+                        pDevice->SetPixelShader(PostFxResources.HDRPass_PS);
+                        if(UsePostFxAA->get() > FusionFixSettings.AntialiasingText.eMO_OFF)
+                            pDevice->SetRenderTarget(0, PostFxResources.FullScreenSurface_temp1);
+                        else
+                            pDevice->SetRenderTarget(0, PostFxResources.backBuffer);
+                        pDevice->SetTexture(2, PostFxResources.FullScreenTex_temp2->mD3DTexture);
+                        pDevice->DrawPrimitive(D3DPT_TRIANGLELIST, 0, 2);
+                        pDevice->SetPixelShader(pShader);
+
+                        auto temptex = PostFxResources.FullScreenTex_temp1->mD3DTexture;
+                        auto tempsurf = PostFxResources.FullScreenSurface_temp1;
+                        PostFxResources.FullScreenTex_temp1->mD3DTexture = PostFxResources.FullScreenTex_temp2->mD3DTexture;
+                        PostFxResources.FullScreenSurface_temp1 = PostFxResources.FullScreenSurface_temp2;
+                        PostFxResources.FullScreenTex_temp2->mD3DTexture = temptex;
+                        PostFxResources.FullScreenSurface_temp2 = tempsurf;
                     }
                     
                     // Anti aliasing
@@ -851,15 +886,22 @@ private:
                             pDevice->SetTexture(0, PostFxResources.FullScreenTex_temp2->mD3DTexture);
                             pDevice->SetTexture(4, PostFxResources.blendTex->mD3DTexture);
 
-                            pDevice->GetSamplerState(0, D3DSAMP_SRGBTEXTURE, &oldSample);
-                            pDevice->GetRenderState(D3DRS_SRGBWRITEENABLE, &OldSRGB); // save srgb state
-                            pDevice->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 1);
-                            pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, 1);
+                            if (!PostFxResources.bAllowHDR)
+                            {
+                                pDevice->GetSamplerState(0, D3DSAMP_SRGBTEXTURE, &oldSample);
+                                pDevice->GetRenderState(D3DRS_SRGBWRITEENABLE, &OldSRGB); // save srgb state
+                                pDevice->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, 1);
+                                pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, 1);
 
-                            pDevice->DrawPrimitive(D3DPT_TRIANGLELIST, 0, 2);
+                                pDevice->DrawPrimitive(D3DPT_TRIANGLELIST, 0, 2);
 
-                            pDevice->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, oldSample);
-                            pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, OldSRGB); // restore srgb state
+                                pDevice->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, oldSample);
+                                pDevice->SetRenderState(D3DRS_SRGBWRITEENABLE, OldSRGB); // restore srgb state
+                            }
+                            else
+                            {
+                                pDevice->DrawPrimitive(D3DPT_TRIANGLELIST, 0, 2);
+                            }
 
                             for (int i = 0; i <= 4; ++i)
                             {
